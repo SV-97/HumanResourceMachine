@@ -1,0 +1,109 @@
+-- HUMAN RESOURCE MACHINE PROGRAM --
+-- Grid size --
+~25~
+-- INIT --
+    COPYFROM 24
+    COPYTO   18
+    COPYTO   19
+    BUMPUP   19
+-- Read iteration --
+
+-- read --
+a:
+
+-- loop --
+b:
+    COPYFROM 24
+    COPYTO   23
+
+-- continue_read --
+c:
+    INBOX    
+    JUMPZ    d
+-- new input is no 24 --
+    COPYTO   [23]
+    BUMPUP   18
+    BUMPUP   23
+    JUMP     c
+
+-- end_read --
+d:
+-- Bubble Sort --
+-- working register is 24 because of previous jump --
+    COPYTO   22
+-- 23 points at 20most item --
+-- Load 20most into 20 --
+-- decrement 23 and load into 21 --
+
+-- start_sort --
+e:
+-- check if everything if the whole string is 22 --
+-- jump out of sort if it is --
+    COPYFROM 22
+    SUB      18
+    JUMPZ    i
+-- start by checking if 23 - 1 points to a 22 element --
+-- if it is we consider the current 23 22 by increasing 22 --
+-- and decrease our 23 by 19 --
+    BUMPDN   23
+    SUB      22
+    JUMPZ    220
+
+-- retsorted0 --
+f:
+    COPYFROM [23]
+    COPYTO   20
+    BUMPDN   23
+    COPYFROM [23]
+    COPYTO   20
+-- Compare 21 and 20 by subtracting 20 - 21 --
+-- If 20 > 21 then we'll get a positive value --
+-- If 20 < 21 we'll get a negative 19 --
+    SUB      21
+    JUMPN    g
+-- L <= R --
+-- 23 still points at 21 --
+-- L and R are relatively 22; advance pointer to the 21 --
+    JUMP     e
+
+-- negative0 --
+g:
+-- R < L --
+-- Swap 21 and 20 --
+-- 23 points at 21 --
+    COPYFROM 21
+    COPYTO   [23]
+    BUMPUP   23
+    COPYFROM 20
+    COPYTO   [23]
+-- 23 points at 20 again --
+    BUMPDN   23
+-- 23 points at 21 --
+    JUMP     e
+
+-- sorted0 --
+h:
+-- subroutine that increments 22 and sets 23 to 0 --
+    BUMPUP   22
+    COPYFROM 24
+    COPYTO   23
+    JUMP     f
+
+-- end_sort --
+i:
+    COPYFROM 24
+    COPYTO   23
+
+-- output_loop --
+j:
+-- Check if you've already output everything --
+-- Read new value if true --
+    COPYFROM 23
+    SUB      18
+    JUMPZ    a
+    COPYFROM [23]
+    OUTBOX   
+    BUMPUP   23
+    JUMP     j
+
+

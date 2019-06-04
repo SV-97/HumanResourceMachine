@@ -1,0 +1,92 @@
+-- Grid size --
+~25~
+-- INIT --
+    COPYFROM    zero
+    COPYTO      str_length
+    COPYTO      one
+    BUMPUP      one
+
+-- Read iteration --
+read:
+loop:
+    COPYFROM    zero
+    COPYTO      index
+continue_read:
+    INBOX
+    JUMPZ       end_read
+-- new input is no zero --
+    COPYTO      [index]
+    BUMPUP      str_length
+    BUMPUP      index
+    JUMP        continue_read
+end_read:
+
+-- Bubble Sort --
+-- working register is zero because of previous jump --
+    COPYTO      sorted
+
+-- index points at rightmost item --
+-- Load rightmost into right --
+-- decrement index and load into left --
+start_sort:
+-- check if everything if the whole string is sorted --
+-- jump out of sort if it is --
+    COPYFROM    sorted
+    SUB         str_length
+    JUMPZ       end_sort
+-- start by checking if index - 1 points to a sorted element --
+-- if it is we consider the current index sorted by increasing sorted --
+-- and decrease our index by one --
+    BUMPDN      index
+    SUB         sorted
+    JUMPZ       sorted0
+retsorted0:
+    COPYFROM    [index]
+    COPYTO      right
+    BUMPDN      index
+    COPYFROM    [index]
+    COPYTO      right
+
+-- Compare left and right by subtracting right - left --
+-- If right > left then we'll get a positive value --
+-- If right < left we'll get a negative one --
+    SUB         left
+    JUMPN       negative0
+-- L <= R --
+-- index still points at left --
+-- L and R are relatively sorted; advance pointer to the left --
+    JUMP        start_sort
+negative0:
+-- R < L --
+-- Swap left and right --
+-- index points at left --
+    COPYFROM    left
+    COPYTO      [index]
+    BUMPUP      index
+    COPYFROM    right
+    COPYTO      [index]
+-- index points at right again --
+    BUMPDN      index
+-- index points at left --
+    JUMP        start_sort
+
+sorted0:
+-- subroutine that increments sorted and sets index to 0 --
+    BUMPUP      sorted
+    COPYFROM    zero
+    COPYTO      index
+    JUMP        retsorted0
+
+end_sort:
+    COPYFROM    zero
+    COPYTO      index
+output_loop:
+-- Check if you've already output everything --
+-- Read new value if true --
+    COPYFROM    index
+    SUB         str_length
+    JUMPZ       read
+    COPYFROM    [index]
+    OUTBOX
+    BUMPUP      index
+    JUMP        output_loop

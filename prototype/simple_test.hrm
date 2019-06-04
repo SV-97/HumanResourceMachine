@@ -1,0 +1,18 @@
+-- Grid size --
+~187~
+-- INIT --
+a:
+    INBOX
+    COPYTO      W
+    COPYTO      power
+    COPYTO      A
+add:
+    BUMPDN      power
+    JUMPN       out
+    COPYFROM    A
+    ADD         W
+    COPYTO      W
+    JUMP        add
+out:
+    OUTBOX
+    JUMP        a

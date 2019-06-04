@@ -1,0 +1,12 @@
+digraph G {
+    labelloc = "t";
+    label = <<B>Human Resource Machine VM</B>>;
+    myasm [label="Fancy Assembly"];
+    tok [label="Tokenizer"];
+    trans_1 [label="Translator\n🡺HRM 'Machine Code'"];
+    myasm -> tok -> trans_1;
+    tok2 [label="Tokenizer"];
+    byte [label="Translator\n🡺Bytecode"];
+    vm [label="Virtual machine\n16-bit register based"];
+    trans_1 -> tok2 -> byte -> vm;
+}
