@@ -1,0 +1,38 @@
+-- HUMAN RESOURCE MACHINE PROGRAM --
+-- Grid size --
+-- INIT --
+
+-- a --
+a:
+-- Instruction 001 --
+    INBOX    
+-- Instruction 002 --
+    COPYTO   [24]
+-- Instruction 003 --
+    COPYTO   23
+-- Instruction 004 --
+    COPYTO   22
+
+-- add --
+b:
+-- Instruction 005 --
+    BUMPDN   23
+-- Instruction 006 --
+    JUMPN    c
+-- Instruction 007 --
+    COPYFROM 22
+-- Instruction 008 --
+    ADD      24
+-- Instruction 009 --
+    COPYTO   24
+-- Instruction 010 --
+    JUMP     b
+
+-- out --
+c:
+-- Instruction 011 --
+    OUTBOX   
+-- Instruction 012 --
+    JUMP     a
+
+

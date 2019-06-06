@@ -1,29 +1,24 @@
+use std::env::args;
 use std::fs::File;
 use std::io::prelude::*;
-use std::env::args;
 
 const ASCII_LOWER: [char; 26] = [
-    'a', 'b', 'c', 'd', 'e', 
-    'f', 'g', 'h', 'i', 'j', 
-    'k', 'l', 'm', 'n', 'o',
-    'p', 'q', 'r', 's', 't', 
-    'u', 'v', 'w', 'x', 'y', 
-    'z',
+    'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's',
+    't', 'u', 'v', 'w', 'x', 'y', 'z',
 ];
 
 const ASCII_UPPER: [char; 26] = [
-    'A', 'B', 'C', 'D', 'E', 
-    'F', 'G', 'H', 'I', 'J', 
-    'K', 'L', 'M', 'N', 'O',
-    'P', 'Q', 'R', 'S', 'T', 
-    'U', 'V', 'W', 'X', 'Y', 
-    'Z',
+    'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S',
+    'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
 ];
 
+const DEBUG: bool = true;
+
 #[macro_use]
+#[allow(dead_code)]
 mod logger {
-    use std::fmt::Display;
     use std::fmt::Debug;
+    use std::fmt::Display;
 
     pub trait AnsiCode {
         /// maps self to the corresponding ansi code
@@ -62,7 +57,7 @@ mod logger {
                 Color::Blue => "94".to_string(),
                 Color::Magenta => "95".to_string(),
                 Color::Cyan => "96".to_string(),
-                Color::White => "97".to_string()
+                Color::White => "97".to_string(),
             }
         }
     }
@@ -93,8 +88,9 @@ mod logger {
                 Modifier::RapidBlink => "6",
                 Modifier::Reverse => "7",
                 Modifier::CrossedOut => "9",
-                Modifier::DoubleUnderline => "21"
-            }.to_string()
+                Modifier::DoubleUnderline => "21",
+            }
+            .to_string()
         }
     }
 
@@ -130,7 +126,7 @@ mod logger {
                 BgColor::Blue => "104".to_string(),
                 BgColor::Magenta => "105".to_string(),
                 BgColor::Cyan => "106".to_string(),
-                BgColor::White => "107".to_string()
+                BgColor::White => "107".to_string(),
             }
         }
     }
@@ -153,7 +149,7 @@ mod logger {
     macro_rules! params {
         ( $($item:expr),* ) => {
             {
-                let mut v: Vec<&dyn AnsiCode> = Vec::new();
+                let mut v: Vec<&dyn crate::logger::AnsiCode> = Vec::new();
                 $(
                     v.push(&$item);
                 )*
@@ -163,41 +159,42 @@ mod logger {
     }
 
     /// Log the success of some event
-    pub fn success<T: Debug, S: Display> (message: S, element: T) {
-        println!("{} {} {}", 
-            colored!("{}", vec!(Color::Green), '✔'), 
-            message, 
+    pub fn success<T: Debug, S: Display>(message: S, element: T) {
+        println!(
+            "{} {} {}",
+            colored!("{}", vec!(Color::Green), '✔'),
+            message,
             colored!("{:?}", params!(Color::Green, Modifier::Italic), element)
         );
     }
 
     /// Log an error of some kind
-    pub fn error<T: Debug, S: Display> (message: S, element: T) {
-        println!("{} {} {}",
+    pub fn error<T: Debug, S: Display>(message: S, element: T) {
+        println!(
+            "{} {} {}",
             colored!("{}", vec!(&Color::Red), '✗'),
-            message, colored!("{:?}", 
-            params!(Color::Red, Modifier::Italic), element)
+            message,
+            colored!("{:?}", params!(Color::Red, Modifier::Italic), element)
         );
     }
 
     /// Clear the terminal
-    pub fn clear_screen () {
+    pub fn clear_screen() {
         println!("\x1b2J");
     }
 }
 
-
 mod tokenizer {
     use super::logger;
-    use std::{error::Error, fmt, str::FromStr, string::ToString};
+    use std::{convert::From, error::Error, fmt, str::FromStr, string::ToString};
 
     #[derive(Debug)]
     pub struct InstructionParseError {
-        text: String
+        text: String,
     }
     impl InstructionParseError {
         pub fn new(text: String) -> Self {
-            InstructionParseError{text}
+            InstructionParseError { text }
         }
     }
     impl Error for InstructionParseError {}
@@ -219,7 +216,7 @@ mod tokenizer {
         Bumpdn,
         Jump,
         Jumpz,
-        Jumpn
+        Jumpn,
     }
 
     impl FromStr for Instruction {
@@ -239,7 +236,7 @@ mod tokenizer {
                 "JUMP" => Ok(Jump),
                 "JUMPZ" => Ok(Jumpz),
                 "JUMPN" => Ok(Jumpn),
-                text => Err(Self::Err::new(text.to_string()))
+                text => Err(Self::Err::new(text.to_string())),
             }
         }
     }
@@ -258,35 +255,81 @@ mod tokenizer {
                 Bumpdn => "BUMPDN",
                 Jump => "JUMP",
                 Jumpz => "JUMPZ",
-                Jumpn => "JUMPN"
-            }.to_string()
+                Jumpn => "JUMPN",
+            }
+            .to_string()
+        }
+    }
+
+    impl From<Instruction> for u8 {
+        fn from(instruction: Instruction) -> Self {
+            use Instruction::*;
+            match instruction {
+                Inbox => 0,
+                Outbox => 1,
+                Copyfrom => 2,
+                Copyto => 3,
+                Add => 4,
+                Sub => 5,
+                Bumpup => 6,
+                Bumpdn => 7,
+                Jump => 8,
+                Jumpz => 9,
+                Jumpn => 10,
+            }
+        }
+    }
+
+    impl Instruction {
+        pub fn to_bytes(self) -> [u8; 1] {
+            // todo impl From<Instruction> for [u8; 1]
+            (self as u8).to_be_bytes()
         }
     }
 
     #[derive(Clone, Debug, PartialEq)]
     pub struct Operand {
         pub text: String,
-        pub pointer: bool
+        pub pointer: bool,
     }
 
     impl Operand {
         pub fn new(text: String, pointer: bool) -> Self {
-            Operand{text, pointer}
+            Operand { text, pointer }
+        }
+    }
+
+    impl From<Operand> for [u8; 2] {
+        fn from(op: Operand) -> Self {
+            let mut val = (&op.text).parse::<u16>().expect(&format!(
+                "Tried converting a malformatted string to bytes {}",
+                op.text
+            ));
+            if op.pointer {
+                val |= 0x1000;
+            }
+            val.to_be_bytes()
         }
     }
 
     #[derive(Clone, Debug, PartialEq)]
     pub enum TokenType {
         Comment,
-        Instruction{instruction: Instruction, operand: Option<Operand>},
+        Instruction {
+            instruction: Instruction,
+            operand: Option<Operand>,
+        },
         JumpMarker,
         /// size of grid
-        GridDefinition(usize)
+        GridDefinition(usize),
     }
 
     impl TokenType {
-        pub fn new_instruction (instruction: Instruction, operand: Option<Operand>) -> Self {
-            TokenType::Instruction{instruction, operand}
+        pub fn new_instruction(instruction: Instruction, operand: Option<Operand>) -> Self {
+            TokenType::Instruction {
+                instruction,
+                operand,
+            }
         }
     }
 
@@ -294,12 +337,16 @@ mod tokenizer {
     pub struct Token {
         pub line_no: usize,
         pub tok_type: TokenType,
-        pub text: String
+        pub text: String,
     }
 
     impl Token {
         pub fn new(line_no: usize, tok_type: TokenType, text: String) -> Self {
-            Token {line_no, tok_type, text}
+            Token {
+                line_no,
+                tok_type,
+                text,
+            }
         }
 
         fn new_grid_definition(line_no: usize, text: String, size: usize) -> Self {
@@ -310,20 +357,30 @@ mod tokenizer {
             Self::new(line_no, TokenType::Comment, text)
         }
 
-        fn new_jump_marker(line_no: usize, text:String) -> Self {
+        fn new_jump_marker(line_no: usize, text: String) -> Self {
             Self::new(line_no, TokenType::JumpMarker, text)
         }
 
-        fn new_instruction(line_no: usize, text:String, instruction: Instruction, operand: Option<Operand>) -> Self {
-            Self::new(line_no, TokenType::new_instruction(instruction, operand), text)
+        fn new_instruction(
+            line_no: usize,
+            text: String,
+            instruction: Instruction,
+            operand: Option<Operand>,
+        ) -> Self {
+            Self::new(
+                line_no,
+                TokenType::new_instruction(instruction, operand),
+                text,
+            )
         }
     }
 
+    #[derive(Clone, Debug, PartialEq)]
     pub struct Tokenizer {
         text: Vec<char>, // todo - rewrite to use a peekable iterator over chars
         pos: usize,
         current_char: Option<char>,
-        line_no: usize
+        line_no: usize,
     }
 
     impl Tokenizer {
@@ -335,17 +392,19 @@ mod tokenizer {
                 text: text,
                 pos: 0,
                 current_char: Some(first_char),
-                line_no: 1
+                line_no: 1,
             }
         }
 
         /// Advance the pos-pointer into self.text
         fn advance(&mut self) {
-            if self.current_char == Some('\n') { self.line_no += 1; }
+            if self.current_char == Some('\n') {
+                self.line_no += 1;
+            }
             self.pos += 1;
             self.current_char = if self.pos > self.text.len() - 1 {
                 None
-            } else { 
+            } else {
                 Some(self.text[self.pos])
             };
         }
@@ -364,7 +423,11 @@ mod tokenizer {
         /// Skip all whitespace characters
         fn skip_whitespace(&mut self) {
             while let Some(char_) = self.current_char {
-                if char_.is_whitespace() { self.advance() } else { break }
+                if char_.is_whitespace() && char_ != '\n' {
+                    self.advance()
+                } else {
+                    break;
+                }
             }
         }
 
@@ -376,17 +439,25 @@ mod tokenizer {
         fn grid_definition(&mut self) -> Token {
             let line_no = self.line_no;
             let mut buf = String::new();
-            while let Some(current_char) = {self.advance(); self.current_char} {
+            while let Some(current_char) = {
+                self.advance();
+                self.current_char
+            } {
                 match current_char {
-                    '~' => {self.advance(); break},
+                    '~' => {
+                        self.advance();
+                        break;
+                    }
                     c if c.is_digit(10) => buf.push(c),
-                    c => {logger::error("Invalid character in grid defition", c); panic!()}
+                    c => {
+                        logger::error("Invalid character in grid defition", c);
+                        panic!()
+                    }
                 }
             }
             let value = buf.parse().unwrap();
             Token::new_grid_definition(line_no, buf, value)
         }
-
 
         /// Parse an operand - current char should be the start of the identifier
         fn operand(&mut self) -> Operand {
@@ -394,12 +465,24 @@ mod tokenizer {
             let mut pointer = false;
             while let Some(current_char) = self.current_char {
                 match current_char {
-                    ']' if !pointer => {logger::error("Closing brackets without opening ones", ']'); panic!()},
-                    ']' if self.peek() == '\n' => {self.advance(); break},
-                    '[' => pointer=true,
-                    '\n' if pointer => {logger::error("Encountered newline while scanning pointer", '\n'); panic!()},
-                    '\n' => {self.advance(); break},
-                    c => operand_buf.push(c)
+                    ']' if !pointer => {
+                        logger::error("Closing brackets without opening ones", ']');
+                        panic!()
+                    }
+                    ']' if self.peek() == '\n' => {
+                        self.advance();
+                        break;
+                    }
+                    '[' => pointer = true,
+                    '\n' if pointer => {
+                        logger::error("Encountered newline while scanning pointer", '\n');
+                        panic!()
+                    }
+                    '\n' => {
+                        self.advance();
+                        break;
+                    }
+                    c => operand_buf.push(c),
                 }
                 self.advance()
             }
@@ -413,13 +496,28 @@ mod tokenizer {
             let mut operand_f = false;
             while let Some(current_char) = self.current_char {
                 match current_char {
-                    '\n' => {self.advance(); break},
-                    c if c.is_whitespace() => {self.skip_whitespace(); operand_f=true; break},
-                    c => buf.push(c)
+                    '\n' => {
+                        self.advance();
+                        break;
+                    }
+                    c if c.is_whitespace() => {
+                        self.skip_whitespace();
+                        if let Some(c) = self.current_char {
+                            if c != '\n' {
+                                operand_f = true;
+                            }
+                        }
+                        break;
+                    }
+                    c => buf.push(c),
                 }
                 self.advance()
             }
-            let operand = if operand_f { Some(self.operand()) } else { None };
+            let operand = if operand_f {
+                Some(self.operand())
+            } else {
+                None
+            };
             let instruction = Instruction::from_str(&buf).unwrap();
             Token::new_instruction(line_no, buf, instruction, operand)
         }
@@ -430,11 +528,20 @@ mod tokenizer {
             let line_no = self.line_no;
             let mut buf = String::new();
             self.advance(); // advance to second '-'
-            while let Some(current_char) = {self.advance(); self.current_char} {
+            while let Some(current_char) = {
+                self.advance();
+                self.current_char
+            } {
                 match current_char {
-                    '-' if self.peek() == '-' => {self.advance_n(2); break},
-                    '\n' => {logger::error("Comment spans multiple lines.", buf); panic!()},
-                    c => buf.push(c)
+                    '-' if self.peek() == '-' => {
+                        self.advance_n(2);
+                        break;
+                    }
+                    '\n' => {
+                        logger::error("Comment spans multiple lines.", buf);
+                        panic!()
+                    }
+                    c => buf.push(c),
                 }
             }
             Token::new_comment(line_no, buf)
@@ -445,9 +552,15 @@ mod tokenizer {
             let mut buf = String::new();
             while let Some(current_char) = self.current_char {
                 match current_char {
-                    ':' => {self.advance(); break},
-                    '\n' => {logger::error("Improperly terminated jump marker", buf); panic!()},
-                    c => buf.push(c)
+                    ':' => {
+                        self.advance();
+                        break;
+                    }
+                    '\n' => {
+                        logger::error("Improperly terminated jump marker", buf);
+                        panic!()
+                    }
+                    c => buf.push(c),
                 }
                 self.advance()
             }
@@ -457,16 +570,22 @@ mod tokenizer {
 
     impl Iterator for Tokenizer {
         type Item = Token;
-        
+
         fn next(&mut self) -> Option<Self::Item> {
             if let Some(current_char) = self.current_char {
                 match current_char {
                     '~' => Some(self.grid_definition()),
                     ' ' => Some(self.instruction()),
                     '-' => Some(self.comment()),
-                    '\n' => {self.advance(); self.next()},
+                    '\n' => {
+                        self.advance();
+                        self.next()
+                    }
                     c if c.is_alphabetic() => Some(self.jump_marker()),
-                    c => {logger::error("Unknown character in input", c); panic!()}
+                    c => {
+                        logger::error("Unknown character in input", c);
+                        panic!()
+                    }
                 }
             } else {
                 None
@@ -477,93 +596,249 @@ mod tokenizer {
 
 mod translator {
     use super::{
-        tokenizer::{
-            Instruction, Tokenizer, 
-            Token, TokenType},
-        ASCII_LOWER, ASCII_UPPER
+        tokenizer::{Instruction, Token, TokenType},
+        ASCII_LOWER, ASCII_UPPER, DEBUG,
     };
-    use std::{iter::Iterator, collections::HashMap};
+    use std::{
+        collections::HashMap,
+        iter::{IntoIterator, Iterator},
+    };
 
-    pub fn translate(tokenizer: Tokenizer) -> String {
-        fn get_identifier<T> (key: String, generator: &mut I, map: &mut HashMap<String, String>) -> String
-            where I: Iterator<Item=String>
+    pub fn translate<T: IntoIterator<Item = Token>>(tokenizer: T) -> String {
+        fn get_identifier<I>(
+            key: String,
+            generator: &mut I,
+            map: &mut HashMap<String, String>,
+        ) -> String
+        where
+            I: Iterator<Item = String>,
         {
             let key2 = key.clone();
-            if map.get(&key).is_none() { map.insert(key, generator.next().unwrap()); }
+            if map.get(&key).is_none() {
+                map.insert(key, generator.next().unwrap());
+            }
             map.get(&key2).unwrap().to_string()
         }
-        
+
         let mut globals = HashMap::new();
-        let mut jmp_id_gen = ASCII_LOWER.iter().chain(ASCII_UPPER.iter()).map(|c| c.to_string());
+        let mut jmp_id_gen = ASCII_LOWER
+            .iter()
+            .chain(ASCII_UPPER.iter())
+            .map(|c| c.to_string());
         let mut inst_id_gen = None;
         let mut program_counter = 0;
-        let mut  buf = String::from("-- HUMAN RESOURCE MACHINE PROGRAM --\n");
+        let mut buf = String::from("-- HUMAN RESOURCE MACHINE PROGRAM --\n");
         for tok in tokenizer {
             match tok.tok_type {
-                TokenType::GridDefinition(ramend) => inst_id_gen = Some(
-                    (0..ramend).map(|n| n.to_string()).rev()),
+                TokenType::GridDefinition(ramend) => {
+                    inst_id_gen = Some((0..ramend).map(|n| n.to_string()).rev())
+                }
 
-                TokenType::Comment => { 
+                TokenType::Comment => {
                     buf.push_str(&format!("--{}--", tok.text));
-                    buf.push('\n') 
-                },
+                    buf.push('\n')
+                }
 
-                TokenType::Instruction{instruction, operand} => {
-                    program_counter += 1;
+                TokenType::Instruction {
+                    instruction,
+                    operand,
+                } => {
+                    if DEBUG {
+                        program_counter += 1;
+                        buf.push_str(&format!("-- Instruction {:03} --\n", program_counter));
+                    }
                     let (text, pointer) = match operand {
                         Some(op) => {
                             let text = match instruction {
-                                Instruction::Jump |
-                                Instruction::Jumpz |
-                                Instruction::Jumpn => get_identifier(op.text, &mut jmp_id_gen, &mut globals),
-                                _ => get_identifier(op.text, inst_id_gen.as_mut().unwrap(), &mut globals)
+                                Instruction::Jump | Instruction::Jumpz | Instruction::Jumpn => {
+                                    get_identifier(op.text, &mut jmp_id_gen, &mut globals)
+                                }
+                                _ => get_identifier(
+                                    op.text,
+                                    inst_id_gen.as_mut().unwrap(),
+                                    &mut globals,
+                                ),
                             };
                             (text, op.pointer)
-                        },
-                        None => ("".to_string(), false)
+                        }
+                        None => ("".to_string(), false),
                     };
                     buf.push_str(&format!("    {: <9}", instruction.to_string()));
-                    if pointer { 
-                        buf.push_str(&format!("[{}]", text)) 
-                    }
-                    else { buf.push_str(&text) };
+                    if pointer {
+                        buf.push_str(&format!("[{}]", text))
+                    } else {
+                        buf.push_str(&text)
+                    };
                     buf.push('\n');
-                },
+                }
                 TokenType::JumpMarker => {
-                    let text = format!("{}:\n", get_identifier(tok.text, &mut jmp_id_gen, &mut globals)); 
+                    if DEBUG {
+                        buf.push_str(&format!("\n-- {} --\n", &tok.text));
+                    }
+                    let text = format!(
+                        "{}:\n",
+                        get_identifier(tok.text, &mut jmp_id_gen, &mut globals)
+                    );
                     buf.push_str(&text)
                 }
             }
         }
+        buf.push_str("\n\n");
         buf
     }
 }
 
-/// Read a the contents of a file relative to the project's root directory
-fn read_file(file_name: &str) -> String {
+mod bytecode {
+    use super::tokenizer::{Instruction, Operand, Token, TokenType};
+    use std::{collections::HashMap, iter::IntoIterator};
+
+    pub fn assemble<T: IntoIterator<Item = Token>>(tokenizer: T) -> Vec<u8> {
+        fn instruction(
+            bytecodebuffer: &mut Vec<u8>,
+            instruction: Instruction,
+            operand: Option<Operand>,
+            memory_map: &mut HashMap<String, u8>,
+            to_patch: &mut HashMap<u8, String>,
+            ip: &mut u8,
+        ) {
+            *ip += 1;
+            let mut temp_buf: Vec<u8> = Vec::with_capacity(2);
+            match operand {
+                Some(op) => match instruction {
+                    Instruction::Jump | Instruction::Jumpz | Instruction::Jumpn => {
+                        if memory_map.get(&op.text).is_none() {
+                            to_patch.insert(*ip, op.text);
+                        } else {
+                            temp_buf.extend(&memory_map.get(&op.text).unwrap().to_be_bytes());
+                        }
+                        *ip += 1;
+                    }
+                    _ => {
+                        temp_buf.extend(&<[u8; 2]>::from(op));
+                        *ip += 2;
+                    }
+                },
+                None => (),
+            };
+            bytecodebuffer.extend(&instruction.to_bytes());
+            bytecodebuffer.extend(temp_buf);
+            ()
+        }
+
+        fn jump_marker(
+            bytecodebuffer: &mut Vec<u8>,
+            tok: &Token,
+            memory_map: &mut HashMap<String, u8>,
+            to_patch: &mut HashMap<u8, String>,
+            ip: &mut u8,
+        ) {
+            if memory_map.contains_key(&tok.text) {
+                panic!(
+                    "Multiple occurences of jump marker {:?} in input file",
+                    tok.text
+                )
+            }
+            let text = tok.text.clone();
+            memory_map.insert(text, *ip);
+            for (key, value) in to_patch {
+                if *value == tok.text {
+                    bytecodebuffer[*key as usize] = *ip;
+                }
+            }
+        }
+
+        let mut ip = 0; // Instruction pointer
+        let mut memory_map = HashMap::new(); // Maps Jump markers like "a" to their memory location
+        let mut to_patch = HashMap::new(); // Maps memory locations to labels that coulnd't be resolved yet
+        let mut bytecodebuffer = Vec::new();
+
+        for tok in tokenizer {
+            dbg!(&memory_map);
+            dbg!(&to_patch);
+            match tok.tok_type {
+                TokenType::Instruction {
+                    instruction: inst,
+                    operand,
+                } => instruction(
+                    &mut bytecodebuffer,
+                    inst,
+                    operand,
+                    &mut memory_map,
+                    &mut to_patch,
+                    &mut ip,
+                ),
+                TokenType::JumpMarker => jump_marker(
+                    &mut bytecodebuffer,
+                    &tok,
+                    &mut memory_map,
+                    &mut to_patch,
+                    &mut ip,
+                ),
+                _ => (),
+            }
+        }
+        bytecodebuffer
+    }
+}
+
+/// Get the root of the project's folder
+fn get_root() -> std::path::PathBuf {
     let args = args().collect::<Vec<String>>();
     let mut file = std::path::Path::new(&args[0]);
-    while let Some(new_parent) = file.parent() { // find project root
+    while let Some(new_parent) = file.parent() {
+        // find project root
         if new_parent.ends_with("hrm") {
             file = new_parent;
             break;
         }
         file = new_parent;
     }
+    file.to_path_buf()
+}
 
-    let mut test_source = file.to_path_buf();
-    test_source.push(file_name);
-    let path = &test_source;
+/// Read a the contents of a file relative to the project's root directory
+fn read_file(file_name: &str) -> String {
+    let mut file = get_root();
+    file.push(file_name);
+    let path = &file;
     let mut file = File::open(path).expect("Failed to open file");
     let mut source = String::new();
-    file.read_to_string(&mut source).expect("Failed to read file");
+    file.read_to_string(&mut source)
+        .expect("Failed to read file");
     source
 }
 
+/// Write a buffer to a file relative to the project's root directory
+fn write_file(file_name: &str, data: &[u8]) {
+    let mut file = get_root();
+    file.push(file_name);
+    let path = &file;
+    let mut file = File::create(path).expect("Failed to create file");
+    file.write_all(data).expect("Failed to write to file");
+}
+
 fn main() {
-    let input = read_file(&"test_source/simple_test.hrm");
-    
-    let tkn = tokenizer::Tokenizer::new(input);
-    let output = translator::translate(tkn);
-    println!("{}", output);
+    let in_path = "test_source/simple_test.hrm";
+    let out_path = "test_source/out.hrm";
+
+    let output1 = {
+        let input = read_file(&in_path);
+        let tkn = tokenizer::Tokenizer::new(input.clone());
+        logger::success("Successfully tokenized input from", in_path);
+        let output = translator::translate(tkn);
+        let data = output.bytes().collect::<Vec<u8>>();
+        write_file(&out_path, &data[..]);
+        println!(
+            "{}",
+            colored!("{}", params!(logger::Modifier::Faint), &output)
+        );
+        logger::success("Successfully written output to", out_path);
+        output
+    };
+    let tkn2 = tokenizer::Tokenizer::new(output1);
+
+    let bytes = bytecode::assemble(tkn2);
+    for (pc, byte) in bytes.iter().enumerate() {
+        println!("{:02} | {:2}", pc, byte);
+    }
 }
