@@ -2,6 +2,24 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::env::args;
 
+const ASCII_LOWER: [char; 26] = [
+    'a', 'b', 'c', 'd', 'e', 
+    'f', 'g', 'h', 'i', 'j', 
+    'k', 'l', 'm', 'n', 'o',
+    'p', 'q', 'r', 's', 't', 
+    'u', 'v', 'w', 'x', 'y', 
+    'z',
+];
+
+const ASCII_UPPER: [char; 26] = [
+    'A', 'B', 'C', 'D', 'E', 
+    'F', 'G', 'H', 'I', 'J', 
+    'K', 'L', 'M', 'N', 'O',
+    'P', 'Q', 'R', 'S', 'T', 
+    'U', 'V', 'W', 'X', 'Y', 
+    'Z',
+];
+
 #[macro_use]
 mod logger {
     use std::fmt::Display;
@@ -171,7 +189,7 @@ mod logger {
 
 mod tokenizer {
     use super::logger;
-    use std::{error::Error, fmt, str::FromStr};
+    use std::{error::Error, fmt, str::FromStr, string::ToString};
 
     #[derive(Debug)]
     pub struct InstructionParseError {
@@ -226,10 +244,29 @@ mod tokenizer {
         }
     }
 
+    impl ToString for Instruction {
+        fn to_string(&self) -> String {
+            use Instruction::*;
+            match self {
+                Inbox => "INBOX",
+                Outbox => "OUTBOX",
+                Copyfrom => "COPYFROM",
+                Copyto => "COPYTO",
+                Add => "ADD",
+                Sub => "SUB",
+                Bumpup => "BUMPUP",
+                Bumpdn => "BUMPDN",
+                Jump => "JUMP",
+                Jumpz => "JUMPZ",
+                Jumpn => "JUMPN"
+            }.to_string()
+        }
+    }
+
     #[derive(Clone, Debug, PartialEq)]
     pub struct Operand {
-        text: String,
-        pointer: bool
+        pub text: String,
+        pub pointer: bool
     }
 
     impl Operand {
@@ -255,9 +292,9 @@ mod tokenizer {
 
     #[derive(Clone, Debug, PartialEq)]
     pub struct Token {
-        line_no: usize,
-        tok_type: TokenType,
-        text: String
+        pub line_no: usize,
+        pub tok_type: TokenType,
+        pub text: String
     }
 
     impl Token {
@@ -283,7 +320,7 @@ mod tokenizer {
     }
 
     pub struct Tokenizer {
-        text: Vec<char>,
+        text: Vec<char>, // todo - rewrite to use a peekable iterator over chars
         pos: usize,
         current_char: Option<char>,
         line_no: usize
@@ -439,7 +476,67 @@ mod tokenizer {
 }
 
 mod translator {
+    use super::{
+        tokenizer::{
+            Instruction, Tokenizer, 
+            Token, TokenType},
+        ASCII_LOWER, ASCII_UPPER
+    };
+    use std::{iter::Iterator, collections::HashMap};
 
+    pub fn translate(tokenizer: Tokenizer) -> String {
+        fn get_identifier<T> (key: String, generator: &mut I, map: &mut HashMap<String, String>) -> String
+            where I: Iterator<Item=String>
+        {
+            let key2 = key.clone();
+            if map.get(&key).is_none() { map.insert(key, generator.next().unwrap()); }
+            map.get(&key2).unwrap().to_string()
+        }
+        
+        let mut globals = HashMap::new();
+        let mut jmp_id_gen = ASCII_LOWER.iter().chain(ASCII_UPPER.iter()).map(|c| c.to_string());
+        let mut inst_id_gen = None;
+        let mut program_counter = 0;
+        let mut  buf = String::from("-- HUMAN RESOURCE MACHINE PROGRAM --\n");
+        for tok in tokenizer {
+            match tok.tok_type {
+                TokenType::GridDefinition(ramend) => inst_id_gen = Some(
+                    (0..ramend).map(|n| n.to_string()).rev()),
+
+                TokenType::Comment => { 
+                    buf.push_str(&format!("--{}--", tok.text));
+                    buf.push('\n') 
+                },
+
+                TokenType::Instruction{instruction, operand} => {
+                    program_counter += 1;
+                    let (text, pointer) = match operand {
+                        Some(op) => {
+                            let text = match instruction {
+                                Instruction::Jump |
+                                Instruction::Jumpz |
+                                Instruction::Jumpn => get_identifier(op.text, &mut jmp_id_gen, &mut globals),
+                                _ => get_identifier(op.text, inst_id_gen.as_mut().unwrap(), &mut globals)
+                            };
+                            (text, op.pointer)
+                        },
+                        None => ("".to_string(), false)
+                    };
+                    buf.push_str(&format!("    {: <9}", instruction.to_string()));
+                    if pointer { 
+                        buf.push_str(&format!("[{}]", text)) 
+                    }
+                    else { buf.push_str(&text) };
+                    buf.push('\n');
+                },
+                TokenType::JumpMarker => {
+                    let text = format!("{}:\n", get_identifier(tok.text, &mut jmp_id_gen, &mut globals)); 
+                    buf.push_str(&text)
+                }
+            }
+        }
+        buf
+    }
 }
 
 /// Read a the contents of a file relative to the project's root directory
@@ -466,8 +563,7 @@ fn read_file(file_name: &str) -> String {
 fn main() {
     let input = read_file(&"test_source/simple_test.hrm");
     
-    let mut tokenizer = tokenizer::Tokenizer::new(input);
-    for token in tokenizer {
-        dbg!(token);
-    }
+    let tkn = tokenizer::Tokenizer::new(input);
+    let output = translator::translate(tkn);
+    println!("{}", output);
 }
