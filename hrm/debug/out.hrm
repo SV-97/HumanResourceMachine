@@ -7,7 +7,7 @@ a:
 -- Instruction 001 --
     INBOX    
 -- Instruction 002 --
-    COPYTO   [24]
+    COPYTO   24
 -- Instruction 003 --
     COPYTO   23
 -- Instruction 004 --
