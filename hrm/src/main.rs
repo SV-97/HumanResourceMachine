@@ -16,9 +16,8 @@ const DEBUG: bool = true;
 
 #[macro_use]
 #[allow(dead_code)]
-mod logger {
-    use std::fmt::Debug;
-    use std::fmt::Display;
+pub mod logger {
+    use std::fmt::{Debug, Display};
 
     pub trait AnsiCode {
         /// maps self to the corresponding ansi code
@@ -159,23 +158,39 @@ mod logger {
     }
 
     /// Log the success of some event
-    pub fn success<T: Debug, S: Display>(message: S, element: T) {
-        println!(
-            "{} {} {}",
-            colored!("{}", vec!(Color::Green), '✔'),
-            message,
-            colored!("{:?}", params!(Color::Green, Modifier::Italic), element)
-        );
+    pub fn success<T: Debug, S: Display>(message: S, element: Option<T>) {
+        if let Some(element) = element {
+            println!(
+                "{} {} {}",
+                colored!("{}", vec!(Color::Green), '✔'),
+                message,
+                colored!("{:?}", params!(Color::Green, Modifier::Italic), element)
+            );
+        } else {
+            println!(
+                "{} {}",
+                colored!("{}", vec!(Color::Green), '✔'),
+                message
+            );
+        }
     }
 
     /// Log an error of some kind
-    pub fn error<T: Debug, S: Display>(message: S, element: T) {
-        println!(
-            "{} {} {}",
-            colored!("{}", vec!(&Color::Red), '✗'),
-            message,
-            colored!("{:?}", params!(Color::Red, Modifier::Italic), element)
-        );
+    pub fn error<T: Debug, S: Display>(message: S, element: Option<T>) {
+        if let Some(element) = element {
+            println!(
+                "{} {} {}",
+                colored!("{}", vec!(&Color::Red), '✗'),
+                message,
+                colored!("{:?}", params!(Color::Red, Modifier::Italic), element)
+            );
+        } else {
+            println!(
+                "{} {}",
+                colored!("{}", vec!(&Color::Red), '✗'),
+                message
+            );
+        }
     }
 
     /// Clear the terminal
@@ -184,9 +199,9 @@ mod logger {
     }
 }
 
-mod tokenizer {
+pub mod tokenizer {
     use super::logger;
-    use std::{convert::From, error::Error, fmt, str::FromStr, string::ToString};
+    use std::{convert::{From, TryFrom}, error::Error, fmt, str::FromStr, string::ToString};
 
     #[derive(Debug)]
     pub struct InstructionParseError {
@@ -217,6 +232,13 @@ mod tokenizer {
         Jump,
         Jumpz,
         Jumpn,
+    }
+
+    impl Instruction {
+        /// Legacy - use `&<[u8; 1]>::from(instruction)` instead
+        pub fn to_bytes(self) -> [u8; 1] {
+            (self as u8).to_be_bytes()
+        }
     }
 
     impl FromStr for Instruction {
@@ -280,10 +302,31 @@ mod tokenizer {
         }
     }
 
-    impl Instruction {
-        pub fn to_bytes(self) -> [u8; 1] {
-            // todo impl From<Instruction> for [u8; 1]
-            (self as u8).to_be_bytes()
+    impl From<Instruction> for [u8; 1] {
+        fn from(inst: Instruction) -> Self {
+            (inst as u8).to_be_bytes()
+        }
+    }
+
+    impl TryFrom<&[u8]> for Instruction {
+        type Error = &'static str;
+        
+        fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+            use Instruction::*;
+            match bytes[0] {
+                0 => Ok(Inbox), // Would be nice to be able to use Inbox.into() etc. here
+                1 => Ok(Outbox),
+                2 => Ok(Copyfrom),
+                3 => Ok(Copyto),
+                4 => Ok(Add),
+                5 => Ok(Sub),
+                6 => Ok(Bumpup),
+                7 => Ok(Bumpdn),
+                8 => Ok(Jump),
+                9 => Ok(Jumpz),
+                10 => Ok(Jumpn),
+                _ => Err("Unknown instruction")
+            }
         }
     }
 
@@ -312,6 +355,22 @@ mod tokenizer {
         }
     }
 
+    impl TryFrom<&[u8]> for Operand {
+        type Error = &'static str;
+    
+        fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+            match bytes.len() {
+                1 => { Ok(Operand::new(bytes[0].to_string(), false)) },
+                2 => {
+                    let pointer = bytes[0] & 0x80 == 0x80;
+                    let data = ((bytes[0] & 0x7F) as u16) << 8 | (bytes[1] as u16);
+                    Ok(Operand::new(data.to_string(), pointer))
+                },
+                _ => Err("Too many bytes in input")
+            }
+        }
+    }
+
     #[derive(Clone, Debug, PartialEq)]
     pub enum TokenType {
         Comment,
@@ -329,6 +388,26 @@ mod tokenizer {
             TokenType::Instruction {
                 instruction,
                 operand,
+            }
+        }
+    }
+
+    /// Get instruction corresponding to leftmost byte in input
+    impl TryFrom<&[u8]> for TokenType {
+        type Error = &'static str;
+        
+        fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+            match Instruction::try_from(bytes) {
+                Ok(instruction) => {
+                    let operand = match instruction {
+                        Instruction::Inbox | Instruction::Outbox => None,
+                        Instruction::Jump | Instruction::Jumpn | Instruction::Jumpz =>
+                            Some(Operand::try_from(&bytes[1..2]).unwrap()),
+                        _ => Some(Operand::try_from(&bytes[1..3]).unwrap())
+                    };
+                    Ok(TokenType::new_instruction(instruction, operand))
+                },
+                Err(text) => Err(text)
             }
         }
     }
@@ -450,7 +529,7 @@ mod tokenizer {
                     }
                     c if c.is_digit(10) => buf.push(c),
                     c => {
-                        logger::error("Invalid character in grid defition", c);
+                        logger::error("Invalid character in grid defition", Some(c));
                         panic!()
                     }
                 }
@@ -466,7 +545,7 @@ mod tokenizer {
             while let Some(current_char) = self.current_char {
                 match current_char {
                     ']' if !pointer => {
-                        logger::error("Closing brackets without opening ones", ']');
+                        logger::error("Closing brackets without opening ones", None as Option<usize>);
                         panic!()
                     }
                     ']' if self.peek() == '\n' => {
@@ -475,7 +554,7 @@ mod tokenizer {
                     }
                     '[' => pointer = true,
                     '\n' if pointer => {
-                        logger::error("Encountered newline while scanning pointer", '\n');
+                        logger::error("Encountered newline while scanning pointer", None as Option<usize>);
                         panic!()
                     }
                     '\n' => {
@@ -538,7 +617,7 @@ mod tokenizer {
                         break;
                     }
                     '\n' => {
-                        logger::error("Comment spans multiple lines.", buf);
+                        logger::error("Comment spans multiple lines.", Some(buf));
                         panic!()
                     }
                     c => buf.push(c),
@@ -557,7 +636,7 @@ mod tokenizer {
                         break;
                     }
                     '\n' => {
-                        logger::error("Improperly terminated jump marker", buf);
+                        logger::error("Improperly terminated jump marker", Some(buf));
                         panic!()
                     }
                     c => buf.push(c),
@@ -583,7 +662,7 @@ mod tokenizer {
                     }
                     c if c.is_alphabetic() => Some(self.jump_marker()),
                     c => {
-                        logger::error("Unknown character in input", c);
+                        logger::error("Unknown character in input", Some(c));
                         panic!()
                     }
                 }
@@ -594,7 +673,7 @@ mod tokenizer {
     }
 }
 
-mod translator {
+pub mod translator {
     use super::{
         tokenizer::{Instruction, Token, TokenType},
         ASCII_LOWER, ASCII_UPPER, DEBUG,
@@ -604,22 +683,22 @@ mod translator {
         iter::{IntoIterator, Iterator},
     };
 
-    pub fn translate<T: IntoIterator<Item = Token>>(tokenizer: T) -> String {
-        fn get_identifier<I>(
-            key: String,
-            generator: &mut I,
-            map: &mut HashMap<String, String>,
-        ) -> String
-        where
-            I: Iterator<Item = String>,
-        {
-            let key2 = key.clone();
-            if map.get(&key).is_none() {
-                map.insert(key, generator.next().unwrap());
-            }
-            map.get(&key2).unwrap().to_string()
+    pub fn get_identifier<I>(
+        key: String,
+        generator: &mut I,
+        map: &mut HashMap<String, String>,
+    ) -> String
+    where
+        I: Iterator<Item = String>,
+    {
+        let key2 = key.clone();
+        if map.get(&key).is_none() {
+            map.insert(key, generator.next().unwrap());
         }
+        map.get(&key2).unwrap().to_string()
+    }
 
+    pub fn translate<T: IntoIterator<Item = Token>>(tokenizer: T) -> String {
         let mut globals = HashMap::new();
         let mut jmp_id_gen = ASCII_LOWER
             .iter()
@@ -688,73 +767,79 @@ mod translator {
     }
 }
 
-mod bytecode {
-    use super::tokenizer::{Instruction, Operand, Token, TokenType};
-    use std::{collections::HashMap, iter::IntoIterator};
+pub mod bytecode {
+    use super::{
+        tokenizer::{Instruction, Operand, Token, TokenType},
+        translator::get_identifier,
+        ASCII_LOWER, ASCII_UPPER,
+    };
+    use std::{collections::HashMap, iter::IntoIterator, convert::TryFrom};
 
-    pub fn assemble<T: IntoIterator<Item = Token>>(tokenizer: T) -> Vec<u8> {
-        fn instruction(
-            bytecodebuffer: &mut Vec<u8>,
-            instruction: Instruction,
-            operand: Option<Operand>,
-            memory_map: &mut HashMap<String, u8>,
-            to_patch: &mut HashMap<u8, String>,
-            ip: &mut u8,
-        ) {
-            *ip += 1;
-            let mut temp_buf: Vec<u8> = Vec::with_capacity(2);
-            match operand {
-                Some(op) => match instruction {
-                    Instruction::Jump | Instruction::Jumpz | Instruction::Jumpn => {
-                        if memory_map.get(&op.text).is_none() {
-                            to_patch.insert(*ip, op.text);
-                        } else {
-                            temp_buf.extend(&memory_map.get(&op.text).unwrap().to_be_bytes());
-                        }
-                        *ip += 1;
+    /// Helper function for assemble that creates bytecode for instructions
+    fn instruction(
+        bytecodebuffer: &mut Vec<u8>,
+        instruction: Instruction,
+        operand: Option<Operand>,
+        memory_map: &mut HashMap<String, u8>,
+        to_patch: &mut HashMap<u8, String>,
+        ip: &mut u8,
+    ) {
+        *ip += 1;
+        let mut temp_buf: Vec<u8> = Vec::with_capacity(2);
+        match operand {
+            Some(op) => match instruction {
+                Instruction::Jump | Instruction::Jumpz | Instruction::Jumpn => {
+                    if memory_map.get(&op.text).is_none() {
+                        to_patch.insert(*ip, op.text);
+                        temp_buf.extend(&[0xFF]);
+                    } else {
+                        temp_buf.extend(&memory_map.get(&op.text).unwrap().to_be_bytes());
                     }
-                    _ => {
-                        temp_buf.extend(&<[u8; 2]>::from(op));
-                        *ip += 2;
-                    }
-                },
-                None => (),
-            };
-            bytecodebuffer.extend(&instruction.to_bytes());
-            bytecodebuffer.extend(temp_buf);
-            ()
-        }
-
-        fn jump_marker(
-            bytecodebuffer: &mut Vec<u8>,
-            tok: &Token,
-            memory_map: &mut HashMap<String, u8>,
-            to_patch: &mut HashMap<u8, String>,
-            ip: &mut u8,
-        ) {
-            if memory_map.contains_key(&tok.text) {
-                panic!(
-                    "Multiple occurences of jump marker {:?} in input file",
-                    tok.text
-                )
-            }
-            let text = tok.text.clone();
-            memory_map.insert(text, *ip);
-            for (key, value) in to_patch {
-                if *value == tok.text {
-                    bytecodebuffer[*key as usize] = *ip;
+                    *ip += 1;
                 }
+                _ => {
+                    temp_buf.extend(&<[u8; 2]>::from(op));
+                    *ip += 2;
+                }
+            },
+            None => (),
+        };
+        bytecodebuffer.extend(&<[u8; 1]>::from(instruction));
+        bytecodebuffer.extend(temp_buf);
+        ()
+    }
+
+    /// Helper function for assemble that creates bytecode for jump markers
+    fn jump_marker(
+        bytecodebuffer: &mut Vec<u8>,
+        tok: &Token,
+        memory_map: &mut HashMap<String, u8>,
+        to_patch: &mut HashMap<u8, String>,
+        ip: &mut u8,
+    ) {
+        if memory_map.contains_key(&tok.text) {
+            panic!(
+                "Multiple occurences of jump marker {:?} in input file",
+                tok.text
+            )
+        }
+        let text = tok.text.clone();
+        memory_map.insert(text, *ip);
+        for (key, value) in to_patch {
+            if *value == tok.text {
+                bytecodebuffer[*key as usize] = *ip;
             }
         }
+    }
 
+    /// Assemble a tokenstream into bytecode
+    pub fn assemble<T: IntoIterator<Item = Token>>(tokenizer: T) -> Vec<u8> {
         let mut ip = 0; // Instruction pointer
         let mut memory_map = HashMap::new(); // Maps Jump markers like "a" to their memory location
         let mut to_patch = HashMap::new(); // Maps memory locations to labels that coulnd't be resolved yet
         let mut bytecodebuffer = Vec::new();
 
         for tok in tokenizer {
-            dbg!(&memory_map);
-            dbg!(&to_patch);
             match tok.tok_type {
                 TokenType::Instruction {
                     instruction: inst,
@@ -772,6 +857,7 @@ mod bytecode {
                     &tok,
                     &mut memory_map,
                     &mut to_patch,
+
                     &mut ip,
                 ),
                 _ => (),
@@ -779,10 +865,60 @@ mod bytecode {
         }
         bytecodebuffer
     }
+
+    pub fn disassemble(bytecode: &[u8]) -> String {
+        /* Planned to do it generic but fails because TokenType::try_from isn't
+        and I can't be bothered to change that right now
+        where
+        T: Index<Range<usize>> + Index<RangeFrom<usize>>,
+        */
+        use Instruction::*;
+        let mut buf = Vec::new();
+        let mut buf_to_bytes = HashMap::new(); // Mapping buffer indices to bytecode indices
+        let mut bytes_to_names = HashMap::new(); // Mapping Bytecode indices as strings to names
+        let mut jump_marker_gen = ASCII_LOWER
+            .iter()
+            .chain(ASCII_UPPER.iter())
+            .map(|c| c.to_string());
+        let mut ip = 0;
+        while let Ok(TokenType::Instruction{instruction, operand}) = TokenType::try_from(&bytecode[ip..]) {
+            buf_to_bytes.insert(buf.len(), ip);
+            match instruction {
+                instr @ Inbox | instr @ Outbox => { ip += 1; buf.push(format!("{: <9}", instr.to_string())) },
+                instr @ Jump | instr @ Jumpz | instr @ Jumpn => {
+                    ip += 2;
+                    let marker = get_identifier(operand.unwrap().text, &mut jump_marker_gen, &mut bytes_to_names);
+                    buf.push(format!("{: <9}{}", instr.to_string(), marker));
+                },
+                instr => {
+                    let op = operand.unwrap();
+                    ip += 3;
+                    let op_text = if op.pointer { format!("[{}]", op.text) } else { op.text };
+                    buf.push(format!("{: <9}{}", instr.to_string(), op_text));
+                }
+            }
+            if ip >= bytecode.len() - 1 { 
+                break; 
+            }
+        }
+        for (i_buf, i_bytes) in buf_to_bytes {
+            if let Some(marker_name) = bytes_to_names.get(&i_bytes.to_string()) {
+                buf[i_buf] = format!("{}:\n    {}", marker_name, buf[i_buf]);
+            } else {
+                buf[i_buf] = format!("    {}", buf[i_buf]);
+            }
+        }
+        buf.join("\n")
+    }
+
+    pub struct CPU {
+        code: &[u8],
+        
+    }
 }
 
 /// Get the root of the project's folder
-fn get_root() -> std::path::PathBuf {
+pub fn get_root() -> std::path::PathBuf {
     let args = args().collect::<Vec<String>>();
     let mut file = std::path::Path::new(&args[0]);
     while let Some(new_parent) = file.parent() {
@@ -797,7 +933,7 @@ fn get_root() -> std::path::PathBuf {
 }
 
 /// Read a the contents of a file relative to the project's root directory
-fn read_file(file_name: &str) -> String {
+pub fn read_file(file_name: &str) -> String {
     let mut file = get_root();
     file.push(file_name);
     let path = &file;
@@ -809,7 +945,7 @@ fn read_file(file_name: &str) -> String {
 }
 
 /// Write a buffer to a file relative to the project's root directory
-fn write_file(file_name: &str, data: &[u8]) {
+pub fn write_file(file_name: &str, data: &[u8]) {
     let mut file = get_root();
     file.push(file_name);
     let path = &file;
@@ -817,28 +953,37 @@ fn write_file(file_name: &str, data: &[u8]) {
     file.write_all(data).expect("Failed to write to file");
 }
 
-fn main() {
+pub fn main() {
     let in_path = "test_source/simple_test.hrm";
-    let out_path = "test_source/out.hrm";
+    let out_path = "debug/out.hrm";
+    let bytecode_path = "debug/out.chrm";
 
     let output1 = {
         let input = read_file(&in_path);
         let tkn = tokenizer::Tokenizer::new(input.clone());
-        logger::success("Successfully tokenized input from", in_path);
+        logger::success("Successfully tokenized input from", Some(in_path));
         let output = translator::translate(tkn);
         let data = output.bytes().collect::<Vec<u8>>();
         write_file(&out_path, &data[..]);
+        /*
         println!(
             "{}",
             colored!("{}", params!(logger::Modifier::Faint), &output)
         );
-        logger::success("Successfully written output to", out_path);
+        */
+        logger::success("Successfully written output to", Some(out_path));
         output
     };
-    let tkn2 = tokenizer::Tokenizer::new(output1);
-
-    let bytes = bytecode::assemble(tkn2);
-    for (pc, byte) in bytes.iter().enumerate() {
-        println!("{:02} | {:2}", pc, byte);
-    }
+    println!("{}", colored!("{}", params!(logger::Modifier::Faint), output1));
+    let bytecode = {
+        let tkn2 = tokenizer::Tokenizer::new(output1);
+        let bytes = bytecode::assemble(tkn2);
+        write_file(&bytecode_path, &bytes[..]);
+        logger::success("Successfully assembled and wrote bytecode to", Some(bytecode_path));
+        bytes
+    };
+    println!("{}", colored!("{:?}", params!(logger::Modifier::Faint), bytecode));
+    let disassembly = bytecode::disassemble(&bytecode);
+    logger::success("Successfully disassembled Bytecode", None as Option<usize>);
+    println!("{}", colored!("{}", params!(logger::Modifier::Faint), disassembly));
 }
