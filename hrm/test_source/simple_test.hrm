@@ -8,11 +8,12 @@ a:
     COPYTO      A
 add:
     BUMPDN      power
-    JUMPN       out
+    JUMPZ       out
     COPYFROM    A
     ADD         W
     COPYTO      W
     JUMP        add
 out:
+    COPYFROM    W
     OUTBOX
     JUMP        a

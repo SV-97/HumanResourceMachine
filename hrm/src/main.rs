@@ -131,8 +131,17 @@ pub mod logger {
     }
 
     /// formats the items provided via the format_str and applies the modifiers from modifier_vec
+    /// or alternatively just applies modifiers to a provided string
     #[macro_export]
     macro_rules! colored {
+        ( $string:expr, $modifier_vec:expr) => {
+            format!(
+                "\x1b[{}m{}\x1b[0m",
+                $modifier_vec.into_iter().map(|elem| elem.to_ansi())
+                    .collect::<Vec<String>>().join(";"),
+                $string
+            )
+        };
         ( $format_str:expr, $modifier_vec:expr, $($item:expr),* ) => {
             format!(
                 "\x1b[{}m{}\x1b[0m",
@@ -140,7 +149,17 @@ pub mod logger {
                     .collect::<Vec<String>>().join(";"),
                 format!($format_str, $( $item )*)
             )
-        }
+        };
+    }
+
+    #[macro_export]
+    macro_rules! println_colored {
+        ( $format_str:expr, $modifier_vec:expr) => {
+            println!("{}" colored!($format_str, $modifier_vec));
+        };
+        ( $format_str:expr, $modifier_vec:expr, $($item:expr),* ) => {
+            println!("{}", colored!($format_str, $modifier_vec, $( $item )*));
+        };
     }
 
     /// Create a vector of AnsiCode Trait objects
@@ -167,11 +186,7 @@ pub mod logger {
                 colored!("{:?}", params!(Color::Green, Modifier::Italic), element)
             );
         } else {
-            println!(
-                "{} {}",
-                colored!("{}", vec!(Color::Green), '✔'),
-                message
-            );
+            println!("{} {}", colored!("{}", vec!(Color::Green), '✔'), message);
         }
     }
 
@@ -185,11 +200,7 @@ pub mod logger {
                 colored!("{:?}", params!(Color::Red, Modifier::Italic), element)
             );
         } else {
-            println!(
-                "{} {}",
-                colored!("{}", vec!(&Color::Red), '✗'),
-                message
-            );
+            println!("{} {}", colored!("{}", vec!(&Color::Red), '✗'), message);
         }
     }
 
@@ -201,7 +212,13 @@ pub mod logger {
 
 pub mod tokenizer {
     use super::logger;
-    use std::{convert::{From, TryFrom}, error::Error, fmt, str::FromStr, string::ToString};
+    use std::{
+        convert::{From, TryFrom},
+        error::Error,
+        fmt,
+        str::FromStr,
+        string::ToString,
+    };
 
     #[derive(Debug)]
     pub struct InstructionParseError {
@@ -310,10 +327,26 @@ pub mod tokenizer {
 
     impl TryFrom<&[u8]> for Instruction {
         type Error = &'static str;
-        
+
         fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+            Instruction::try_from(bytes[0])
+        }
+    }
+
+    impl TryFrom<u8> for Instruction {
+        type Error = &'static str;
+
+        fn try_from(byte: u8) -> Result<Self, Self::Error> {
+            Instruction::try_from(&byte)
+        }
+    }
+
+    impl TryFrom<&u8> for Instruction {
+        type Error = &'static str;
+
+        fn try_from(byte: &u8) -> Result<Self, Self::Error> {
             use Instruction::*;
-            match bytes[0] {
+            match byte {
                 0 => Ok(Inbox), // Would be nice to be able to use Inbox.into() etc. here
                 1 => Ok(Outbox),
                 2 => Ok(Copyfrom),
@@ -325,7 +358,7 @@ pub mod tokenizer {
                 8 => Ok(Jump),
                 9 => Ok(Jumpz),
                 10 => Ok(Jumpn),
-                _ => Err("Unknown instruction")
+                _ => Err("Unknown instruction"),
             }
         }
     }
@@ -357,16 +390,16 @@ pub mod tokenizer {
 
     impl TryFrom<&[u8]> for Operand {
         type Error = &'static str;
-    
+
         fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
             match bytes.len() {
-                1 => { Ok(Operand::new(bytes[0].to_string(), false)) },
+                1 => Ok(Operand::new(bytes[0].to_string(), false)),
                 2 => {
                     let pointer = bytes[0] & 0x80 == 0x80;
                     let data = ((bytes[0] & 0x7F) as u16) << 8 | (bytes[1] as u16);
                     Ok(Operand::new(data.to_string(), pointer))
-                },
-                _ => Err("Too many bytes in input")
+                }
+                _ => Err("Too many bytes in input"),
             }
         }
     }
@@ -395,19 +428,20 @@ pub mod tokenizer {
     /// Get instruction corresponding to leftmost byte in input
     impl TryFrom<&[u8]> for TokenType {
         type Error = &'static str;
-        
+
         fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
             match Instruction::try_from(bytes) {
                 Ok(instruction) => {
                     let operand = match instruction {
                         Instruction::Inbox | Instruction::Outbox => None,
-                        Instruction::Jump | Instruction::Jumpn | Instruction::Jumpz =>
-                            Some(Operand::try_from(&bytes[1..2]).unwrap()),
-                        _ => Some(Operand::try_from(&bytes[1..3]).unwrap())
+                        Instruction::Jump | Instruction::Jumpn | Instruction::Jumpz => {
+                            Some(Operand::try_from(&bytes[1..2]).unwrap())
+                        }
+                        _ => Some(Operand::try_from(&bytes[1..3]).unwrap()),
                     };
                     Ok(TokenType::new_instruction(instruction, operand))
-                },
-                Err(text) => Err(text)
+                }
+                Err(text) => Err(text),
             }
         }
     }
@@ -545,7 +579,10 @@ pub mod tokenizer {
             while let Some(current_char) = self.current_char {
                 match current_char {
                     ']' if !pointer => {
-                        logger::error("Closing brackets without opening ones", None as Option<usize>);
+                        logger::error(
+                            "Closing brackets without opening ones",
+                            None as Option<usize>,
+                        );
                         panic!()
                     }
                     ']' if self.peek() == '\n' => {
@@ -554,7 +591,10 @@ pub mod tokenizer {
                     }
                     '[' => pointer = true,
                     '\n' if pointer => {
-                        logger::error("Encountered newline while scanning pointer", None as Option<usize>);
+                        logger::error(
+                            "Encountered newline while scanning pointer",
+                            None as Option<usize>,
+                        );
                         panic!()
                     }
                     '\n' => {
@@ -773,7 +813,7 @@ pub mod bytecode {
         translator::get_identifier,
         ASCII_LOWER, ASCII_UPPER,
     };
-    use std::{collections::HashMap, iter::IntoIterator, convert::TryFrom};
+    use std::{collections::HashMap, convert::TryFrom, iter::IntoIterator};
 
     /// Helper function for assemble that creates bytecode for instructions
     fn instruction(
@@ -857,7 +897,6 @@ pub mod bytecode {
                     &tok,
                     &mut memory_map,
                     &mut to_patch,
-
                     &mut ip,
                 ),
                 _ => (),
@@ -881,24 +920,39 @@ pub mod bytecode {
             .chain(ASCII_UPPER.iter())
             .map(|c| c.to_string());
         let mut ip = 0;
-        while let Ok(TokenType::Instruction{instruction, operand}) = TokenType::try_from(&bytecode[ip..]) {
+        while let Ok(TokenType::Instruction {
+            instruction,
+            operand,
+        }) = TokenType::try_from(&bytecode[ip..])
+        {
             buf_to_bytes.insert(buf.len(), ip);
             match instruction {
-                instr @ Inbox | instr @ Outbox => { ip += 1; buf.push(format!("{: <9}", instr.to_string())) },
+                instr @ Inbox | instr @ Outbox => {
+                    ip += 1;
+                    buf.push(format!("{: <9}", instr.to_string()))
+                }
                 instr @ Jump | instr @ Jumpz | instr @ Jumpn => {
                     ip += 2;
-                    let marker = get_identifier(operand.unwrap().text, &mut jump_marker_gen, &mut bytes_to_names);
+                    let marker = get_identifier(
+                        operand.unwrap().text,
+                        &mut jump_marker_gen,
+                        &mut bytes_to_names,
+                    );
                     buf.push(format!("{: <9}{}", instr.to_string(), marker));
-                },
+                }
                 instr => {
                     let op = operand.unwrap();
                     ip += 3;
-                    let op_text = if op.pointer { format!("[{}]", op.text) } else { op.text };
+                    let op_text = if op.pointer {
+                        format!("[{}]", op.text)
+                    } else {
+                        op.text
+                    };
                     buf.push(format!("{: <9}{}", instr.to_string(), op_text));
                 }
             }
-            if ip >= bytecode.len() - 1 { 
-                break; 
+            if ip >= bytecode.len() - 1 {
+                break;
             }
         }
         for (i_buf, i_bytes) in buf_to_bytes {
@@ -910,10 +964,233 @@ pub mod bytecode {
         }
         buf.join("\n")
     }
+}
 
-    pub struct CPU {
-        code: &[u8],
-        
+pub mod vm {
+    use super::logger;
+    use std::collections::HashMap;
+
+    pub struct CPU<'a> {
+        code: &'a [u8],
+        registers: HashMap<u8, i16>,
+        accumulator: Option<i16>,
+        ip: usize,
+        vocal: bool,
+    }
+
+    impl<'a> CPU<'a> {
+        pub fn new(code: &'a [u8], vocal: bool) -> Self {
+            CPU {
+                code,
+                registers: HashMap::new(),
+                accumulator: None,
+                ip: 0,
+                vocal,
+            }
+        }
+
+        pub fn execute(&mut self) {
+            let functions: Vec<Box<Fn(&mut CPU)>> = vec![
+                Box::new(|s| s.inbox()),
+                Box::new(|s| s.outbox()),
+                Box::new(|s| s.copyfrom()),
+                Box::new(|s| s.copyto()),
+                Box::new(|s| s.add()),
+                Box::new(|s| s.sub()),
+                Box::new(|s| s.bumpup()),
+                Box::new(|s| s.bumpdn()),
+                Box::new(|s| s.jump()),
+                Box::new(|s| s.jumpz()),
+                Box::new(|s| s.jumpn()),
+            ];
+            loop {
+                let instruction = self.code[self.ip];
+                self.ip += 1;
+                functions[instruction as usize](self);
+                if self.ip >= self.code.len() - 1 {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+        }
+
+        fn get_one_byte_operand(&mut self) -> u8 {
+            let val = self.code[self.ip];
+            self.ip += 1;
+            val
+        }
+
+        /// Return a 15 byte number and whether it refers to a pointer
+        fn get_two_byte_operand(&mut self) -> (u16, bool) {
+            let pointer = self.code[self.ip] & 0x80 == 0x80;
+            let data = ((self.code[self.ip] & 0x7F) as u16) << 8 | (self.code[self.ip + 1] as u16);
+            self.ip += 2;
+            (data, pointer)
+        }
+
+        fn get_target_adress(&mut self, data: u8, pointer: bool) -> u8 {
+            if pointer {
+                (*self
+                    .registers
+                    .get(&data)
+                    .expect("Can't read from an empty register!")) as u8
+            } else {
+                data
+            }
+        }
+
+        fn inbox(&mut self) {
+            use io::Write;
+            use std::io;
+            loop {
+                print!("{}", colored!("INBOX: ", params!(logger::Color::Cyan)));
+                io::stdout().flush().unwrap();
+                let mut buf = String::new();
+                std::io::stdin().read_line(&mut buf).unwrap();
+                match buf.trim().parse::<i16>() {
+                    Ok(val) => {
+                        self.accumulator = Some(val as i16);
+                        break;
+                    }
+                    Err(_) => {
+                        println!("Invalid value!");
+                        continue;
+                    }
+                }
+            }
+        }
+
+        fn outbox(&mut self) {
+            println_colored!(
+                "OUTBOX: {}",
+                params!(logger::Color::Yellow),
+                self.accumulator
+                    .expect("Can't outbox if you don't hold anything!")
+            );
+            self.accumulator = None;
+        }
+
+        fn copyfrom(&mut self) {
+            let (data, pointer) = self.get_two_byte_operand();
+            let target_adress = self.get_target_adress(data as u8, pointer);
+            self.accumulator = Some(
+                *self
+                    .registers
+                    .get(&target_adress)
+                    .expect("Can't read from an empty register!") as i16,
+            );
+            if self.vocal {
+                println!("accu <- {}", self.accumulator.unwrap());
+            }
+        }
+
+        fn copyto(&mut self) {
+            let (data, pointer) = self.get_two_byte_operand();
+            let target_adress = self.get_target_adress(data as u8, pointer);
+            self.registers.insert(
+                target_adress,
+                self.accumulator
+                    .expect("Can't write if you don't hold anything"),
+            );
+            if self.vocal {
+                println!("{} <- {}", target_adress, self.accumulator.unwrap());
+            }
+        }
+
+        fn add(&mut self) {
+            let (data, pointer) = self.get_two_byte_operand();
+            let target_adress = self.get_target_adress(data as u8, pointer);
+            self.accumulator = Some({
+                let val = self
+                    .registers
+                    .get(&target_adress)
+                    .expect("Can't add to empty register!");
+                if self.vocal {
+                    println!("accu <- {} + {}", self.accumulator.unwrap(), val);
+                }
+                self.accumulator
+                    .expect("Can't add without holding anything")
+                    + val
+            });
+        }
+
+        fn sub(&mut self) {
+            let (data, pointer) = self.get_two_byte_operand();
+            let target_adress = self.get_target_adress(data as u8, pointer);
+            self.accumulator = Some({
+                let val = self
+                    .registers
+                    .get(&target_adress)
+                    .expect("Can't add to empty register!");
+                if self.vocal {
+                    println!("accu <- {} - {}", self.accumulator.unwrap(), val);
+                }
+                self.accumulator
+                    .expect("Can't add without holding anything")
+                    - val
+            });
+        }
+
+        fn bumpup(&mut self) {
+            let (data, pointer) = self.get_two_byte_operand();
+            let target_adress = self.get_target_adress(data as u8, pointer);
+            let old = *self
+                .registers
+                .get(&target_adress)
+                .expect("Can't add to empty register!");
+            self.registers.insert(target_adress, old + 1);
+            self.accumulator = Some(old + 1);
+            if self.vocal {
+                println!("{} <- {} + 1", target_adress, old);
+                println!("accu <- {} + 1", old);
+            }
+        }
+
+        fn bumpdn(&mut self) {
+            let (data, pointer) = self.get_two_byte_operand();
+            let target_adress = self.get_target_adress(data as u8, pointer);
+            let old = *self
+                .registers
+                .get(&target_adress)
+                .expect("Can't add to empty register!");
+            self.registers.insert(target_adress, old - 1);
+            self.accumulator = Some(old - 1);
+            if self.vocal {
+                println!("{} <- {} - 1", target_adress, old);
+                println!("accu <- {} - 1", old);
+            }
+        }
+
+        fn jump(&mut self) {
+            let data = self.get_one_byte_operand();
+            self.ip = data as usize;
+        }
+
+        fn jumpz(&mut self) {
+            if self
+                .accumulator
+                .expect("Can't 'jump if zero' if you don't hold anything")
+                == 0
+            {
+                let data = self.get_one_byte_operand();
+                self.ip = data as usize;
+            } else {
+                self.ip += 1;
+            }
+        }
+
+        fn jumpn(&mut self) {
+            if self
+                .accumulator
+                .expect("Can't 'jump if negative' if you don't hold anything")
+                < 0
+            {
+                let data = self.get_one_byte_operand();
+                self.ip = data as usize;
+            } else {
+                self.ip += 1;
+            }
+        }
     }
 }
 
@@ -974,16 +1251,30 @@ pub fn main() {
         logger::success("Successfully written output to", Some(out_path));
         output
     };
-    println!("{}", colored!("{}", params!(logger::Modifier::Faint), output1));
+    println!(
+        "{}",
+        colored!("{}", params!(logger::Modifier::Faint), output1)
+    );
     let bytecode = {
         let tkn2 = tokenizer::Tokenizer::new(output1);
         let bytes = bytecode::assemble(tkn2);
         write_file(&bytecode_path, &bytes[..]);
-        logger::success("Successfully assembled and wrote bytecode to", Some(bytecode_path));
+        logger::success(
+            "Successfully assembled and wrote bytecode to",
+            Some(bytecode_path),
+        );
         bytes
     };
-    println!("{}", colored!("{:?}", params!(logger::Modifier::Faint), bytecode));
+    println!(
+        "{}",
+        colored!("{:?}", params!(logger::Modifier::Faint), &bytecode)
+    );
     let disassembly = bytecode::disassemble(&bytecode);
     logger::success("Successfully disassembled Bytecode", None as Option<usize>);
-    println!("{}", colored!("{}", params!(logger::Modifier::Faint), disassembly));
+    println!(
+        "{}",
+        colored!("{}", params!(logger::Modifier::Faint), disassembly)
+    );
+    let mut cpu = vm::CPU::new(&bytecode, true);
+    cpu.execute();
 }
