@@ -131,8 +131,17 @@ pub mod logger {
     }
 
     /// formats the items provided via the format_str and applies the modifiers from modifier_vec
+    /// or alternatively just applies modifiers to a provided string
     #[macro_export]
     macro_rules! colored {
+        ( $string:expr, $modifier_vec:expr) => {
+            format!(
+                "\x1b[{}m{}\x1b[0m",
+                $modifier_vec.into_iter().map(|elem| elem.to_ansi())
+                    .collect::<Vec<String>>().join(";"),
+                $string
+            )
+        };
         ( $format_str:expr, $modifier_vec:expr, $($item:expr),* ) => {
             format!(
                 "\x1b[{}m{}\x1b[0m",
@@ -140,7 +149,17 @@ pub mod logger {
                     .collect::<Vec<String>>().join(";"),
                 format!($format_str, $( $item )*)
             )
-        }
+        };
+    }
+
+    #[macro_export]
+    macro_rules! println_colored {
+        ( $format_str:expr, $modifier_vec:expr) => {
+            println!("{}" colored!($format_str, $modifier_vec));
+        };
+        ( $format_str:expr, $modifier_vec:expr, $($item:expr),* ) => {
+            println!("{}", colored!($format_str, $modifier_vec, $( $item )*));
+        };
     }
 
     /// Create a vector of AnsiCode Trait objects
@@ -167,11 +186,7 @@ pub mod logger {
                 colored!("{:?}", params!(Color::Green, Modifier::Italic), element)
             );
         } else {
-            println!(
-                "{} {}",
-                colored!("{}", vec!(Color::Green), '✔'),
-                message
-            );
+            println!("{} {}", colored!("{}", vec!(Color::Green), '✔'), message);
         }
     }
 
@@ -185,11 +200,7 @@ pub mod logger {
                 colored!("{:?}", params!(Color::Red, Modifier::Italic), element)
             );
         } else {
-            println!(
-                "{} {}",
-                colored!("{}", vec!(&Color::Red), '✗'),
-                message
-            );
+            println!("{} {}", colored!("{}", vec!(&Color::Red), '✗'), message);
         }
     }
 
@@ -201,7 +212,13 @@ pub mod logger {
 
 pub mod tokenizer {
     use super::logger;
-    use std::{convert::{From, TryFrom}, error::Error, fmt, str::FromStr, string::ToString};
+    use std::{
+        convert::{From, TryFrom},
+        error::Error,
+        fmt,
+        str::FromStr,
+        string::ToString,
+    };
 
     #[derive(Debug)]
     pub struct InstructionParseError {
@@ -310,10 +327,26 @@ pub mod tokenizer {
 
     impl TryFrom<&[u8]> for Instruction {
         type Error = &'static str;
-        
+
         fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+            Instruction::try_from(bytes[0])
+        }
+    }
+
+    impl TryFrom<u8> for Instruction {
+        type Error = &'static str;
+
+        fn try_from(byte: u8) -> Result<Self, Self::Error> {
+            Instruction::try_from(&byte)
+        }
+    }
+
+    impl TryFrom<&u8> for Instruction {
+        type Error = &'static str;
+
+        fn try_from(byte: &u8) -> Result<Self, Self::Error> {
             use Instruction::*;
-            match bytes[0] {
+            match byte {
                 0 => Ok(Inbox), // Would be nice to be able to use Inbox.into() etc. here
                 1 => Ok(Outbox),
                 2 => Ok(Copyfrom),
@@ -325,7 +358,7 @@ pub mod tokenizer {
                 8 => Ok(Jump),
                 9 => Ok(Jumpz),
                 10 => Ok(Jumpn),
-                _ => Err("Unknown instruction")
+                _ => Err("Unknown instruction"),
             }
         }
     }
@@ -357,16 +390,16 @@ pub mod tokenizer {
 
     impl TryFrom<&[u8]> for Operand {
         type Error = &'static str;
-    
+
         fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
             match bytes.len() {
-                1 => { Ok(Operand::new(bytes[0].to_string(), false)) },
+                1 => Ok(Operand::new(bytes[0].to_string(), false)),
                 2 => {
                     let pointer = bytes[0] & 0x80 == 0x80;
                     let data = ((bytes[0] & 0x7F) as u16) << 8 | (bytes[1] as u16);
                     Ok(Operand::new(data.to_string(), pointer))
-                },
-                _ => Err("Too many bytes in input")
+                }
+                _ => Err("Too many bytes in input"),
             }
         }
     }
@@ -395,19 +428,20 @@ pub mod tokenizer {
     /// Get instruction corresponding to leftmost byte in input
     impl TryFrom<&[u8]> for TokenType {
         type Error = &'static str;
-        
+
         fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
             match Instruction::try_from(bytes) {
                 Ok(instruction) => {
                     let operand = match instruction {
                         Instruction::Inbox | Instruction::Outbox => None,
-                        Instruction::Jump | Instruction::Jumpn | Instruction::Jumpz =>
-                            Some(Operand::try_from(&bytes[1..2]).unwrap()),
-                        _ => Some(Operand::try_from(&bytes[1..3]).unwrap())
+                        Instruction::Jump | Instruction::Jumpn | Instruction::Jumpz => {
+                            Some(Operand::try_from(&bytes[1..2]).unwrap())
+                        }
+                        _ => Some(Operand::try_from(&bytes[1..3]).unwrap()),
                     };
                     Ok(TokenType::new_instruction(instruction, operand))
-                },
-                Err(text) => Err(text)
+                }
+                Err(text) => Err(text),
             }
         }
     }
@@ -545,7 +579,10 @@ pub mod tokenizer {
             while let Some(current_char) = self.current_char {
                 match current_char {
                     ']' if !pointer => {
-                        logger::error("Closing brackets without opening ones", None as Option<usize>);
+                        logger::error(
+                            "Closing brackets without opening ones",
+                            None as Option<usize>,
+                        );
                         panic!()
                     }
                     ']' if self.peek() == '\n' => {
@@ -554,7 +591,10 @@ pub mod tokenizer {
                     }
                     '[' => pointer = true,
                     '\n' if pointer => {
-                        logger::error("Encountered newline while scanning pointer", None as Option<usize>);
+                        logger::error(
+                            "Encountered newline while scanning pointer",
+                            None as Option<usize>,
+                        );
                         panic!()
                     }
                     '\n' => {
@@ -773,7 +813,7 @@ pub mod bytecode {
         translator::get_identifier,
         ASCII_LOWER, ASCII_UPPER,
     };
-    use std::{collections::HashMap, iter::IntoIterator, convert::TryFrom};
+    use std::{collections::HashMap, convert::TryFrom, iter::IntoIterator};
 
     /// Helper function for assemble that creates bytecode for instructions
     fn instruction(
@@ -857,7 +897,6 @@ pub mod bytecode {
                     &tok,
                     &mut memory_map,
                     &mut to_patch,
-
                     &mut ip,
                 ),
                 _ => (),
@@ -881,24 +920,39 @@ pub mod bytecode {
             .chain(ASCII_UPPER.iter())
             .map(|c| c.to_string());
         let mut ip = 0;
-        while let Ok(TokenType::Instruction{instruction, operand}) = TokenType::try_from(&bytecode[ip..]) {
+        while let Ok(TokenType::Instruction {
+            instruction,
+            operand,
+        }) = TokenType::try_from(&bytecode[ip..])
+        {
             buf_to_bytes.insert(buf.len(), ip);
             match instruction {
-                instr @ Inbox | instr @ Outbox => { ip += 1; buf.push(format!("{: <9}", instr.to_string())) },
+                instr @ Inbox | instr @ Outbox => {
+                    ip += 1;
+                    buf.push(format!("{: <9}", instr.to_string()))
+                }
                 instr @ Jump | instr @ Jumpz | instr @ Jumpn => {
                     ip += 2;
-                    let marker = get_identifier(operand.unwrap().text, &mut jump_marker_gen, &mut bytes_to_names);
+                    let marker = get_identifier(
+                        operand.unwrap().text,
+                        &mut jump_marker_gen,
+                        &mut bytes_to_names,
+                    );
                     buf.push(format!("{: <9}{}", instr.to_string(), marker));
-                },
+                }
                 instr => {
                     let op = operand.unwrap();
                     ip += 3;
-                    let op_text = if op.pointer { format!("[{}]", op.text) } else { op.text };
+                    let op_text = if op.pointer {
+                        format!("[{}]", op.text)
+                    } else {
+                        op.text
+                    };
                     buf.push(format!("{: <9}{}", instr.to_string(), op_text));
                 }
             }
-            if ip >= bytecode.len() - 1 { 
-                break; 
+            if ip >= bytecode.len() - 1 {
+                break;
             }
         }
         for (i_buf, i_bytes) in buf_to_bytes {
