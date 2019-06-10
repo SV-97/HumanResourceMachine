@@ -964,10 +964,233 @@ pub mod bytecode {
         }
         buf.join("\n")
     }
+}
 
-    pub struct CPU {
-        code: &[u8],
-        
+pub mod vm {
+    use super::logger;
+    use std::collections::HashMap;
+
+    pub struct CPU<'a> {
+        code: &'a [u8],
+        registers: HashMap<u8, i16>,
+        accumulator: Option<i16>,
+        ip: usize,
+        vocal: bool,
+    }
+
+    impl<'a> CPU<'a> {
+        pub fn new(code: &'a [u8], vocal: bool) -> Self {
+            CPU {
+                code,
+                registers: HashMap::new(),
+                accumulator: None,
+                ip: 0,
+                vocal,
+            }
+        }
+
+        pub fn execute(&mut self) {
+            let functions: Vec<Box<Fn(&mut CPU)>> = vec![
+                Box::new(|s| s.inbox()),
+                Box::new(|s| s.outbox()),
+                Box::new(|s| s.copyfrom()),
+                Box::new(|s| s.copyto()),
+                Box::new(|s| s.add()),
+                Box::new(|s| s.sub()),
+                Box::new(|s| s.bumpup()),
+                Box::new(|s| s.bumpdn()),
+                Box::new(|s| s.jump()),
+                Box::new(|s| s.jumpz()),
+                Box::new(|s| s.jumpn()),
+            ];
+            loop {
+                let instruction = self.code[self.ip];
+                self.ip += 1;
+                functions[instruction as usize](self);
+                if self.ip >= self.code.len() - 1 {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+        }
+
+        fn get_one_byte_operand(&mut self) -> u8 {
+            let val = self.code[self.ip];
+            self.ip += 1;
+            val
+        }
+
+        /// Return a 15 byte number and whether it refers to a pointer
+        fn get_two_byte_operand(&mut self) -> (u16, bool) {
+            let pointer = self.code[self.ip] & 0x80 == 0x80;
+            let data = ((self.code[self.ip] & 0x7F) as u16) << 8 | (self.code[self.ip + 1] as u16);
+            self.ip += 2;
+            (data, pointer)
+        }
+
+        fn get_target_adress(&mut self, data: u8, pointer: bool) -> u8 {
+            if pointer {
+                (*self
+                    .registers
+                    .get(&data)
+                    .expect("Can't read from an empty register!")) as u8
+            } else {
+                data
+            }
+        }
+
+        fn inbox(&mut self) {
+            use io::Write;
+            use std::io;
+            loop {
+                print!("{}", colored!("INBOX: ", params!(logger::Color::Cyan)));
+                io::stdout().flush().unwrap();
+                let mut buf = String::new();
+                std::io::stdin().read_line(&mut buf).unwrap();
+                match buf.trim().parse::<i16>() {
+                    Ok(val) => {
+                        self.accumulator = Some(val as i16);
+                        break;
+                    }
+                    Err(_) => {
+                        println!("Invalid value!");
+                        continue;
+                    }
+                }
+            }
+        }
+
+        fn outbox(&mut self) {
+            println_colored!(
+                "OUTBOX: {}",
+                params!(logger::Color::Yellow),
+                self.accumulator
+                    .expect("Can't outbox if you don't hold anything!")
+            );
+            self.accumulator = None;
+        }
+
+        fn copyfrom(&mut self) {
+            let (data, pointer) = self.get_two_byte_operand();
+            let target_adress = self.get_target_adress(data as u8, pointer);
+            self.accumulator = Some(
+                *self
+                    .registers
+                    .get(&target_adress)
+                    .expect("Can't read from an empty register!") as i16,
+            );
+            if self.vocal {
+                println!("accu <- {}", self.accumulator.unwrap());
+            }
+        }
+
+        fn copyto(&mut self) {
+            let (data, pointer) = self.get_two_byte_operand();
+            let target_adress = self.get_target_adress(data as u8, pointer);
+            self.registers.insert(
+                target_adress,
+                self.accumulator
+                    .expect("Can't write if you don't hold anything"),
+            );
+            if self.vocal {
+                println!("{} <- {}", target_adress, self.accumulator.unwrap());
+            }
+        }
+
+        fn add(&mut self) {
+            let (data, pointer) = self.get_two_byte_operand();
+            let target_adress = self.get_target_adress(data as u8, pointer);
+            self.accumulator = Some({
+                let val = self
+                    .registers
+                    .get(&target_adress)
+                    .expect("Can't add to empty register!");
+                if self.vocal {
+                    println!("accu <- {} + {}", self.accumulator.unwrap(), val);
+                }
+                self.accumulator
+                    .expect("Can't add without holding anything")
+                    + val
+            });
+        }
+
+        fn sub(&mut self) {
+            let (data, pointer) = self.get_two_byte_operand();
+            let target_adress = self.get_target_adress(data as u8, pointer);
+            self.accumulator = Some({
+                let val = self
+                    .registers
+                    .get(&target_adress)
+                    .expect("Can't add to empty register!");
+                if self.vocal {
+                    println!("accu <- {} - {}", self.accumulator.unwrap(), val);
+                }
+                self.accumulator
+                    .expect("Can't add without holding anything")
+                    - val
+            });
+        }
+
+        fn bumpup(&mut self) {
+            let (data, pointer) = self.get_two_byte_operand();
+            let target_adress = self.get_target_adress(data as u8, pointer);
+            let old = *self
+                .registers
+                .get(&target_adress)
+                .expect("Can't add to empty register!");
+            self.registers.insert(target_adress, old + 1);
+            self.accumulator = Some(old + 1);
+            if self.vocal {
+                println!("{} <- {} + 1", target_adress, old);
+                println!("accu <- {} + 1", old);
+            }
+        }
+
+        fn bumpdn(&mut self) {
+            let (data, pointer) = self.get_two_byte_operand();
+            let target_adress = self.get_target_adress(data as u8, pointer);
+            let old = *self
+                .registers
+                .get(&target_adress)
+                .expect("Can't add to empty register!");
+            self.registers.insert(target_adress, old - 1);
+            self.accumulator = Some(old - 1);
+            if self.vocal {
+                println!("{} <- {} - 1", target_adress, old);
+                println!("accu <- {} - 1", old);
+            }
+        }
+
+        fn jump(&mut self) {
+            let data = self.get_one_byte_operand();
+            self.ip = data as usize;
+        }
+
+        fn jumpz(&mut self) {
+            if self
+                .accumulator
+                .expect("Can't 'jump if zero' if you don't hold anything")
+                == 0
+            {
+                let data = self.get_one_byte_operand();
+                self.ip = data as usize;
+            } else {
+                self.ip += 1;
+            }
+        }
+
+        fn jumpn(&mut self) {
+            if self
+                .accumulator
+                .expect("Can't 'jump if negative' if you don't hold anything")
+                < 0
+            {
+                let data = self.get_one_byte_operand();
+                self.ip = data as usize;
+            } else {
+                self.ip += 1;
+            }
+        }
     }
 }
 
@@ -1028,16 +1251,30 @@ pub fn main() {
         logger::success("Successfully written output to", Some(out_path));
         output
     };
-    println!("{}", colored!("{}", params!(logger::Modifier::Faint), output1));
+    println!(
+        "{}",
+        colored!("{}", params!(logger::Modifier::Faint), output1)
+    );
     let bytecode = {
         let tkn2 = tokenizer::Tokenizer::new(output1);
         let bytes = bytecode::assemble(tkn2);
         write_file(&bytecode_path, &bytes[..]);
-        logger::success("Successfully assembled and wrote bytecode to", Some(bytecode_path));
+        logger::success(
+            "Successfully assembled and wrote bytecode to",
+            Some(bytecode_path),
+        );
         bytes
     };
-    println!("{}", colored!("{:?}", params!(logger::Modifier::Faint), bytecode));
+    println!(
+        "{}",
+        colored!("{:?}", params!(logger::Modifier::Faint), &bytecode)
+    );
     let disassembly = bytecode::disassemble(&bytecode);
     logger::success("Successfully disassembled Bytecode", None as Option<usize>);
-    println!("{}", colored!("{}", params!(logger::Modifier::Faint), disassembly));
+    println!(
+        "{}",
+        colored!("{}", params!(logger::Modifier::Faint), disassembly)
+    );
+    let mut cpu = vm::CPU::new(&bytecode, true);
+    cpu.execute();
 }
