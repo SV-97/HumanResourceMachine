@@ -3,10 +3,13 @@ digraph G {
     label = <<B>Human Resource Machine VM</B>>;
     myasm [label="Fancy Assembly"];
     tok [label="Tokenizer"];
-    trans_1 [label="Translator\n🡺HRM 'Machine Code'"];
+    trans_1 [label="Translator"];
+    hrm [label="HRM 'Machine Code'"];
     myasm -> tok -> trans_1;
     tok2 [label="Tokenizer"];
-    byte [label="Translator\n🡺Bytecode"];
-    vm [label="Virtual machine\n16-bit register based"];
-    trans_1 -> tok2 -> byte -> vm;
+    byte [label="Bytecode Assembler"];
+    dis [label="Bytecode disassembler"];
+    vm [label="Virtual machine\n8/16-bit register machine"];
+    trans_1 -> hrm -> tok2 -> byte -> vm;
+    byte -> dis -> hrm
 }
