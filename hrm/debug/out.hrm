@@ -18,7 +18,7 @@ b:
 -- Instruction 005 --
     BUMPDN   23
 -- Instruction 006 --
-    JUMPN    c
+    JUMPZ    c
 -- Instruction 007 --
     COPYFROM 22
 -- Instruction 008 --
@@ -31,8 +31,10 @@ b:
 -- out --
 c:
 -- Instruction 011 --
-    OUTBOX   
+    COPYFROM 24
 -- Instruction 012 --
+    OUTBOX   
+-- Instruction 013 --
     JUMP     a
 
 
